@@ -11,4 +11,4 @@ RUN npm run build -- --configuration production
 
 FROM nginx:stable
 RUN rm -f /usr/share/nginx/html/index.html
-COPY --from=build /src/nav-app/dist/browser/ /usr/share/nginx/html/
+COPY --from=build /src/nav-app/dist/browser/* /usr/share/nginx/html/
