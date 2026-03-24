@@ -1,0 +1,28 @@
+services:
+  threatfox:
+    image: ghcr.io/opencti-platform/opencti/connector-threatfox:rolling
+    container_name: threatfox
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      OPENCTI_URL: http://opencti:8080
+      OPENCTI_TOKEN: ${OPENCTI_ADMIN_TOKEN}
+      CONNECTOR_ID: ${THREATFOX_CONNECTOR_ID}
+      CONNECTOR_TYPE: EXTERNAL_IMPORT
+      CONNECTOR_NAME: ThreatFox
+      CONNECTOR_SCOPE: threatfox
+      CONNECTOR_LOG_LEVEL: info
+      CONNECTOR_CONFIDENCE_LEVEL: 50
+      CONNECTOR_UPDATE_EXISTING_DATA: "false"
+      THREATFOX_API_KEY: ${THREATFOX_API_KEY}
+      THREATFOX_INTERVAL: ${THREATFOX_IMPORT_INTERVAL}
+      THREATFOX_CREATE_INDICATORS: ${THREATFOX_CREATE_INDICATORS}
+      THREATFOX_ENABLE_TAGS: ${THREATFOX_ENABLE_TAGS}
+      THREATFOX_DEFAULT_SCORE: ${THREATFOX_DEFAULT_SCORE}
+    networks:
+      - opencti_opencti_internal
+
+networks:
+  opencti_opencti_internal:
+    external: true

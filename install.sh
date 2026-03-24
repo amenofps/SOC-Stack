@@ -7,6 +7,7 @@ ENV_FILE="${ROOT_DIR}/.env"
 CYBERCHEF_DIR="${ROOT_DIR}/Cyberchef"
 NAVIGATOR_DIR="${ROOT_DIR}/Navigator"
 OPENCTI_DIR="${ROOT_DIR}/OpenCTI"
+THREATFOX_DIR="${ROOT_DIR}/ThreatFox"
 PROXY_DIR="${ROOT_DIR}/shared/reverse-proxy"
 
 CYBERCHEF_CERT_DIR="${CYBERCHEF_DIR}/certs"
@@ -201,6 +202,12 @@ OPENCTI_REDIS_PASSWORD=${OPENCTI_REDIS_PASSWORD}
 OPENCTI_RABBITMQ_DEFAULT_PASS=${OPENCTI_RABBITMQ_DEFAULT_PASS}
 OPENCTI_MINIO_ROOT_PASSWORD=${OPENCTI_MINIO_ROOT_PASSWORD}
 OPENCTI_ELASTIC_PASSWORD=${OPENCTI_ELASTIC_PASSWORD}
+THREATFOX_API_KEY=${THREATFOX_API_KEY}
+THREATFOX_IMPORT_INTERVAL=${THREATFOX_IMPORT_INTERVAL}
+THREATFOX_CREATE_INDICATORS=${THREATFOX_CREATE_INDICATORS}
+THREATFOX_ENABLE_TAGS=${THREATFOX_ENABLE_TAGS}
+THREATFOX_DEFAULT_SCORE=${THREATFOX_DEFAULT_SCORE}
+THREATFOX_CONNECTOR_ID=${THREATFOX_CONNECTOR_ID}
 EOF
   chmod 600 "$ENV_FILE"
 }
@@ -294,6 +301,12 @@ start_services() {
   log "Starting OpenCTI"
   compose_cmd --env-file "$ENV_FILE" -f "${OPENCTI_DIR}/docker-compose.yml" up -d
 
+  if [[ "${ENABLE_THREATFOX}" == "yes" ]]; then
+    [[ -f "${THREATFOX_DIR}/docker-compose.yml" ]] || fail "Missing ${THREATFOX_DIR}/docker-compose.yml"
+    log "Starting ThreatFox"
+    compose_cmd --env-file "$ENV_FILE" -f "${THREATFOX_DIR}/docker-compose.yml" up -d
+  fi
+
   log "Starting reverse proxy"
   compose_cmd --env-file "$ENV_FILE" -f "${PROXY_DIR}/docker-compose.yml" up -d
 }
@@ -311,7 +324,6 @@ main() {
   prompt_choice CERT_MODE "Certificate mode" "selfsigned" "selfsigned" "provided"
 
   prompt OPENCTI_ADMIN_EMAIL "OpenCTI admin email"
-
   prompt_secret OPENCTI_ADMIN_PASSWORD "OpenCTI admin password"
 
   prompt_yes_no GENERATE_OPENCTI_SECRETS "Generate OpenCTI tokens and passwords automatically?" "y"
@@ -334,6 +346,23 @@ main() {
   fi
 
   validate_uuid "$OPENCTI_ADMIN_TOKEN" || fail "OPENCTI_ADMIN_TOKEN must be a valid UUID"
+
+  prompt_yes_no ENABLE_THREATFOX "Deploy ThreatFox connector?" "y"
+  if [[ "${ENABLE_THREATFOX}" == "yes" ]]; then
+    prompt THREATFOX_API_KEY "ThreatFox API key (leave blank if not using one)" ""
+    prompt THREATFOX_IMPORT_INTERVAL "ThreatFox import interval in minutes" "60"
+    prompt_choice THREATFOX_CREATE_INDICATORS "Create indicators from ThreatFox data?" "true" "true" "false"
+    prompt_choice THREATFOX_ENABLE_TAGS "Enable ThreatFox tags?" "true" "true" "false"
+    prompt THREATFOX_DEFAULT_SCORE "ThreatFox default score" "50"
+    THREATFOX_CONNECTOR_ID="$(random_uuid)"
+  else
+    THREATFOX_API_KEY=""
+    THREATFOX_IMPORT_INTERVAL="60"
+    THREATFOX_CREATE_INDICATORS="true"
+    THREATFOX_ENABLE_TAGS="true"
+    THREATFOX_DEFAULT_SCORE="50"
+    THREATFOX_CONNECTOR_ID=""
+  fi
 
   write_env_file
   ensure_dirs
@@ -369,7 +398,8 @@ URLs:
 - https://navigator.${DOMAIN}:8443
 - https://opencti.${DOMAIN}:8443
 
-If your reverse proxy compose uses a different host port than 8443, use that instead.
+ThreatFox:
+- Enabled: ${ENABLE_THREATFOX}
 EOF
 }
 
