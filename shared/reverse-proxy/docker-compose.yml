@@ -15,6 +15,7 @@ services:
       - ./conf.d:/etc/nginx/conf.d:ro
       - ../../Cyberchef/certs:/certs/cyberchef:ro
       - ../../Navigator/certs:/certs/navigator:ro
+      - ../../OpenCTI/certs:/certs/opencti:ro
     networks:
       - soc_shared
 

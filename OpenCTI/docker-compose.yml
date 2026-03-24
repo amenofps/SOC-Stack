@@ -1,0 +1,162 @@
+version: "3.9"
+
+services:
+  opencti:
+    image: opencti/platform:latest
+    container_name: opencti
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      NODE_OPTIONS: --max-old-space-size=4096
+      APP__PORT: 8080
+      APP__BASE_URL: https://opencti.${DOMAIN}
+
+      REDIS__HOSTNAME: opencti-redis
+      REDIS__PORT: 6379
+      REDIS__PASSWORD: ${OPENCTI_REDIS_PASSWORD}
+
+      AMQP__HOSTNAME: opencti-rabbitmq
+      AMQP__PORT: 5672
+      AMQP__USERNAME: opencti
+      AMQP__PASSWORD: ${OPENCTI_RABBITMQ_DEFAULT_PASS}
+
+      MINIO__ENDPOINT: opencti-minio
+      MINIO__PORT: 9000
+      MINIO__USE_SSL: "false"
+      MINIO__ACCESS_KEY: opencti
+      MINIO__SECRET_KEY: ${OPENCTI_MINIO_ROOT_PASSWORD}
+
+      ELASTICSEARCH__URL: http://opencti-elasticsearch:9200
+      ELASTICSEARCH__USERNAME: elastic
+      ELASTICSEARCH__PASSWORD: ${OPENCTI_ELASTIC_PASSWORD}
+
+      SMTP__HOSTNAME: ${OPENCTI_SMTP_HOST:-}
+      SMTP__PORT: ${OPENCTI_SMTP_PORT:-25}
+      SMTP__USERNAME: ${OPENCTI_SMTP_USERNAME:-}
+      SMTP__PASSWORD: ${OPENCTI_SMTP_PASSWORD:-}
+      SMTP__TLS: ${OPENCTI_SMTP_TLS:-false}
+      SMTP__SSL: ${OPENCTI_SMTP_SSL:-false}
+      SMTP__SENDER: ${OPENCTI_SMTP_SENDER:-}
+
+      PROVIDERS__LOCAL__STRATEGY: LocalStrategy
+      APP__ADMIN__EMAIL: ${OPENCTI_ADMIN_EMAIL}
+      APP__ADMIN__PASSWORD: ${OPENCTI_ADMIN_PASSWORD}
+      APP__ADMIN__TOKEN: ${OPENCTI_ADMIN_TOKEN}
+      APP__HEALTH_ACCESS_KEY: ${OPENCTI_HEALTHCHECK_ACCESS_KEY}
+    depends_on:
+      opencti-redis:
+        condition: service_started
+      opencti-rabbitmq:
+        condition: service_healthy
+      opencti-minio:
+        condition: service_started
+      opencti-elasticsearch:
+        condition: service_healthy
+    networks:
+      - soc_shared
+      - opencti_internal
+
+  worker:
+    image: opencti/worker:latest
+    container_name: opencti-worker
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      OPENCTI_URL: http://opencti:8080
+      OPENCTI_TOKEN: ${OPENCTI_ADMIN_TOKEN}
+
+      REDIS__HOSTNAME: opencti-redis
+      REDIS__PORT: 6379
+      REDIS__PASSWORD: ${OPENCTI_REDIS_PASSWORD}
+
+      AMQP__HOSTNAME: opencti-rabbitmq
+      AMQP__PORT: 5672
+      AMQP__USERNAME: opencti
+      AMQP__PASSWORD: ${OPENCTI_RABBITMQ_DEFAULT_PASS}
+
+      MINIO__ENDPOINT: opencti-minio
+      MINIO__PORT: 9000
+      MINIO__USE_SSL: "false"
+      MINIO__ACCESS_KEY: opencti
+      MINIO__SECRET_KEY: ${OPENCTI_MINIO_ROOT_PASSWORD}
+
+      ELASTICSEARCH__URL: http://opencti-elasticsearch:9200
+      ELASTICSEARCH__USERNAME: elastic
+      ELASTICSEARCH__PASSWORD: ${OPENCTI_ELASTIC_PASSWORD}
+    depends_on:
+      opencti:
+        condition: service_started
+    networks:
+      - opencti_internal
+
+  opencti-redis:
+    image: redis:7-alpine
+    container_name: opencti-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${OPENCTI_REDIS_PASSWORD}"]
+    volumes:
+      - ./redis:/data
+    networks:
+      - opencti_internal
+
+  opencti-rabbitmq:
+    image: rabbitmq:3-management
+    container_name: opencti-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: opencti
+      RABBITMQ_DEFAULT_PASS: ${OPENCTI_RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - ./rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+    networks:
+      - opencti_internal
+
+  opencti-minio:
+    image: minio/minio:latest
+    container_name: opencti-minio
+    restart: unless-stopped
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: opencti
+      MINIO_ROOT_PASSWORD: ${OPENCTI_MINIO_ROOT_PASSWORD}
+    volumes:
+      - ./minio:/data
+    networks:
+      - opencti_internal
+
+  opencti-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: opencti-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=${OPENCTI_ELASTIC_PASSWORD}
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./elasticsearch:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:${OPENCTI_ELASTIC_PASSWORD} http://localhost:9200 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    networks:
+      - opencti_internal
+
+networks:
+  soc_shared:
+    external: true
+  opencti_internal:
+    driver: bridge

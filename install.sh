@@ -6,16 +6,21 @@ ENV_FILE="${ROOT_DIR}/.env"
 
 CYBERCHEF_DIR="${ROOT_DIR}/Cyberchef"
 NAVIGATOR_DIR="${ROOT_DIR}/Navigator"
+OPENCTI_DIR="${ROOT_DIR}/OpenCTI"
 PROXY_DIR="${ROOT_DIR}/shared/reverse-proxy"
 
 CYBERCHEF_CERT_DIR="${CYBERCHEF_DIR}/certs"
 NAVIGATOR_CERT_DIR="${NAVIGATOR_DIR}/certs"
+OPENCTI_CERT_DIR="${OPENCTI_DIR}/certs"
 
 CYBERCHEF_CONF_TEMPLATE="${PROXY_DIR}/conf.d/cyberchef.conf.template"
 CYBERCHEF_CONF_RENDERED="${PROXY_DIR}/conf.d/cyberchef.conf"
 
 NAVIGATOR_CONF_TEMPLATE="${PROXY_DIR}/conf.d/navigator.conf.template"
 NAVIGATOR_CONF_RENDERED="${PROXY_DIR}/conf.d/navigator.conf"
+
+OPENCTI_CONF_TEMPLATE="${PROXY_DIR}/conf.d/opencti.conf.template"
+OPENCTI_CONF_RENDERED="${PROXY_DIR}/conf.d/opencti.conf"
 
 log() {
   echo "[+] $*"
@@ -48,6 +53,26 @@ prompt() {
   fi
 
   printf -v "$var_name" '%s' "$input"
+}
+
+prompt_secret() {
+  local var_name="$1"
+  local prompt_text="$2"
+  local input1 input2
+
+  while true; do
+    read -r -s -p "$prompt_text: " input1 || true
+    echo
+    read -r -s -p "Confirm $prompt_text: " input2 || true
+    echo
+
+    if [[ "$input1" == "$input2" ]]; then
+      printf -v "$var_name" '%s' "$input1"
+      return 0
+    fi
+
+    warn "Values did not match. Try again."
+  done
 }
 
 prompt_choice() {
@@ -98,9 +123,14 @@ prompt_yes_no() {
   done
 }
 
+random_secret() {
+  openssl rand -hex 32
+}
+
 ensure_dirs() {
   mkdir -p "$CYBERCHEF_CERT_DIR"
   mkdir -p "$NAVIGATOR_CERT_DIR"
+  mkdir -p "$OPENCTI_CERT_DIR"
   mkdir -p "${PROXY_DIR}/conf.d"
 }
 
@@ -139,37 +169,38 @@ write_env_file() {
 DOMAIN=${DOMAIN}
 TZ=${TZ}
 CERT_MODE=${CERT_MODE}
+OPENCTI_ADMIN_EMAIL=${OPENCTI_ADMIN_EMAIL}
+OPENCTI_ADMIN_PASSWORD=${OPENCTI_ADMIN_PASSWORD}
+OPENCTI_ADMIN_TOKEN=${OPENCTI_ADMIN_TOKEN}
+OPENCTI_HEALTHCHECK_ACCESS_KEY=${OPENCTI_HEALTHCHECK_ACCESS_KEY}
+OPENCTI_REDIS_PASSWORD=${OPENCTI_REDIS_PASSWORD}
+OPENCTI_RABBITMQ_DEFAULT_PASS=${OPENCTI_RABBITMQ_DEFAULT_PASS}
+OPENCTI_MINIO_ROOT_PASSWORD=${OPENCTI_MINIO_ROOT_PASSWORD}
+OPENCTI_ELASTIC_PASSWORD=${OPENCTI_ELASTIC_PASSWORD}
 EOF
   chmod 600 "$ENV_FILE"
 }
 
-handle_certificates() {
-  local cyberchef_fqdn="cyberchef.${DOMAIN}"
-  local navigator_fqdn="navigator.${DOMAIN}"
+handle_certificates_for_service() {
+  local service_name="$1"
+  local fqdn="$2"
+  local cert_dir="$3"
 
   case "${CERT_MODE}" in
     selfsigned)
-      generate_self_signed_cert "$cyberchef_fqdn" "$CYBERCHEF_CERT_DIR"
-      generate_self_signed_cert "$navigator_fqdn" "$NAVIGATOR_CERT_DIR"
+      generate_self_signed_cert "$fqdn" "$cert_dir"
       ;;
     provided)
-      log "Using provided certificate files for ${cyberchef_fqdn}"
       local cert_src key_src
+      log "Using provided certificate files for ${fqdn}"
+      prompt cert_src "Path to ${service_name} certificate file"
+      prompt key_src "Path to ${service_name} private key file"
 
-      prompt cert_src "Path to Cyberchef certificate file"
-      prompt key_src "Path to Cyberchef private key file"
-      copy_file_checked "$cert_src" "${CYBERCHEF_CERT_DIR}/tls.crt"
-      copy_file_checked "$key_src" "${CYBERCHEF_CERT_DIR}/tls.key"
-      chmod 600 "${CYBERCHEF_CERT_DIR}/tls.key"
-      chmod 644 "${CYBERCHEF_CERT_DIR}/tls.crt"
+      copy_file_checked "$cert_src" "${cert_dir}/tls.crt"
+      copy_file_checked "$key_src" "${cert_dir}/tls.key"
 
-      log "Using provided certificate files for ${navigator_fqdn}"
-      prompt cert_src "Path to Navigator certificate file"
-      prompt key_src "Path to Navigator private key file"
-      copy_file_checked "$cert_src" "${NAVIGATOR_CERT_DIR}/tls.crt"
-      copy_file_checked "$key_src" "${NAVIGATOR_CERT_DIR}/tls.key"
-      chmod 600 "${NAVIGATOR_CERT_DIR}/tls.key"
-      chmod 644 "${NAVIGATOR_CERT_DIR}/tls.crt"
+      chmod 600 "${cert_dir}/tls.key"
+      chmod 644 "${cert_dir}/tls.crt"
       ;;
     *)
       fail "CERT_MODE must be either 'selfsigned' or 'provided'"
@@ -177,14 +208,22 @@ handle_certificates() {
   esac
 }
 
+handle_certificates() {
+  handle_certificates_for_service "Cyberchef" "cyberchef.${DOMAIN}" "$CYBERCHEF_CERT_DIR"
+  handle_certificates_for_service "Navigator" "navigator.${DOMAIN}" "$NAVIGATOR_CERT_DIR"
+  handle_certificates_for_service "OpenCTI" "opencti.${DOMAIN}" "$OPENCTI_CERT_DIR"
+}
+
 render_proxy_configs() {
   [[ -f "$CYBERCHEF_CONF_TEMPLATE" ]] || fail "Template not found: ${CYBERCHEF_CONF_TEMPLATE}"
   [[ -f "$NAVIGATOR_CONF_TEMPLATE" ]] || fail "Template not found: ${NAVIGATOR_CONF_TEMPLATE}"
+  [[ -f "$OPENCTI_CONF_TEMPLATE" ]] || fail "Template not found: ${OPENCTI_CONF_TEMPLATE}"
 
   log "Rendering reverse proxy configs"
   export DOMAIN
   envsubst '${DOMAIN}' < "$CYBERCHEF_CONF_TEMPLATE" > "$CYBERCHEF_CONF_RENDERED"
   envsubst '${DOMAIN}' < "$NAVIGATOR_CONF_TEMPLATE" > "$NAVIGATOR_CONF_RENDERED"
+  envsubst '${DOMAIN}' < "$OPENCTI_CONF_TEMPLATE" > "$OPENCTI_CONF_RENDERED"
 }
 
 compose_cmd() {
@@ -200,6 +239,7 @@ compose_cmd() {
 start_services() {
   [[ -f "${CYBERCHEF_DIR}/docker-compose.yml" ]] || fail "Missing ${CYBERCHEF_DIR}/docker-compose.yml"
   [[ -f "${NAVIGATOR_DIR}/docker-compose.yml" ]] || fail "Missing ${NAVIGATOR_DIR}/docker-compose.yml"
+  [[ -f "${OPENCTI_DIR}/docker-compose.yml" ]] || fail "Missing ${OPENCTI_DIR}/docker-compose.yml"
   [[ -f "${PROXY_DIR}/docker-compose.yml" ]] || fail "Missing ${PROXY_DIR}/docker-compose.yml"
 
   log "Starting Cyberchef"
@@ -207,6 +247,9 @@ start_services() {
 
   log "Starting Navigator"
   compose_cmd --env-file "$ENV_FILE" -f "${NAVIGATOR_DIR}/docker-compose.yml" up -d
+
+  log "Starting OpenCTI"
+  compose_cmd --env-file "$ENV_FILE" -f "${OPENCTI_DIR}/docker-compose.yml" up -d
 
   log "Starting reverse proxy"
   compose_cmd --env-file "$ENV_FILE" -f "${PROXY_DIR}/docker-compose.yml" up -d
@@ -220,6 +263,26 @@ main() {
   prompt DOMAIN "Base domain"
   prompt TZ "Timezone" "Europe/London"
   prompt_choice CERT_MODE "Certificate mode" "selfsigned" "selfsigned" "provided"
+
+  prompt OPENCTI_ADMIN_EMAIL "OpenCTI admin email"
+  prompt_secret OPENCTI_ADMIN_PASSWORD "OpenCTI admin password"
+
+  prompt_yes_no GENERATE_OPENCTI_SECRETS "Generate OpenCTI tokens and passwords automatically?" "y"
+  if [[ "$GENERATE_OPENCTI_SECRETS" == "yes" ]]; then
+    OPENCTI_ADMIN_TOKEN="$(random_secret)"
+    OPENCTI_HEALTHCHECK_ACCESS_KEY="$(random_secret)"
+    OPENCTI_REDIS_PASSWORD="$(random_secret)"
+    OPENCTI_RABBITMQ_DEFAULT_PASS="$(random_secret)"
+    OPENCTI_MINIO_ROOT_PASSWORD="$(random_secret)"
+    OPENCTI_ELASTIC_PASSWORD="$(random_secret)"
+  else
+    prompt_secret OPENCTI_ADMIN_TOKEN "OpenCTI admin token"
+    prompt_secret OPENCTI_HEALTHCHECK_ACCESS_KEY "OpenCTI healthcheck access key"
+    prompt_secret OPENCTI_REDIS_PASSWORD "OpenCTI Redis password"
+    prompt_secret OPENCTI_RABBITMQ_DEFAULT_PASS "OpenCTI RabbitMQ password"
+    prompt_secret OPENCTI_MINIO_ROOT_PASSWORD "OpenCTI MinIO root password"
+    prompt_secret OPENCTI_ELASTIC_PASSWORD "OpenCTI Elasticsearch password"
+  fi
 
   write_env_file
   ensure_dirs
@@ -238,12 +301,16 @@ Generated:
 - ${CYBERCHEF_CERT_DIR}/tls.key
 - ${NAVIGATOR_CERT_DIR}/tls.crt
 - ${NAVIGATOR_CERT_DIR}/tls.key
+- ${OPENCTI_CERT_DIR}/tls.crt
+- ${OPENCTI_CERT_DIR}/tls.key
 - ${CYBERCHEF_CONF_RENDERED}
 - ${NAVIGATOR_CONF_RENDERED}
+- ${OPENCTI_CONF_RENDERED}
 
 URLs:
 - https://cyberchef.${DOMAIN}:8443
 - https://navigator.${DOMAIN}:8443
+- https://opencti.${DOMAIN}:8443
 
 If your reverse proxy compose uses a different host port than 8443, use that instead.
 EOF
