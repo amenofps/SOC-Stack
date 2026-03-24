@@ -27,25 +27,68 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
 }
 
-load_env() {
-  [[ -f "$ENV_FILE" ]] || fail ".env file not found at ${ENV_FILE}"
+prompt() {
+  local var_name="$1"
+  local prompt_text="$2"
+  local default_value="${3:-}"
+  local input
 
-  set -a
-  # shellcheck disable=SC1090
-  . "$ENV_FILE"
-  set +a
+  if [[ -n "$default_value" ]]; then
+    read -r -p "$prompt_text [$default_value]: " input || true
+    input="${input:-$default_value}"
+  else
+    read -r -p "$prompt_text: " input || true
+  fi
 
-  [[ -n "${DOMAIN:-}" ]] || fail "DOMAIN is not set in .env"
-  [[ -n "${TZ:-}" ]] || fail "TZ is not set in .env"
-  [[ -n "${CERT_MODE:-}" ]] || fail "CERT_MODE is not set in .env"
+  printf -v "$var_name" '%s' "$input"
 }
 
-prompt_path() {
-  local prompt_text="$1"
-  local outvar="$2"
+prompt_choice() {
+  local var_name="$1"
+  local prompt_text="$2"
+  local default_value="$3"
+  shift 3
+  local valid_choices=("$@")
   local input
-  read -r -p "$prompt_text: " input
-  printf -v "$outvar" "%s" "$input"
+
+  while true; do
+    read -r -p "$prompt_text [${valid_choices[*]}] (default: $default_value): " input || true
+    input="${input:-$default_value}"
+
+    for choice in "${valid_choices[@]}"; do
+      if [[ "$input" == "$choice" ]]; then
+        printf -v "$var_name" '%s' "$input"
+        return 0
+      fi
+    done
+
+    warn "Invalid choice: $input"
+  done
+}
+
+prompt_yes_no() {
+  local var_name="$1"
+  local prompt_text="$2"
+  local default_value="${3:-y}"
+  local input
+
+  while true; do
+    read -r -p "$prompt_text [y/n] (default: $default_value): " input || true
+    input="${input:-$default_value}"
+    case "${input,,}" in
+      y|yes)
+        printf -v "$var_name" 'yes'
+        return 0
+        ;;
+      n|no)
+        printf -v "$var_name" 'no'
+        return 0
+        ;;
+      *)
+        warn "Please answer y or n."
+        ;;
+    esac
+  done
 }
 
 ensure_dirs() {
@@ -82,6 +125,16 @@ generate_self_signed_cert() {
   chmod 644 "${cert_dir}/tls.crt"
 }
 
+write_env_file() {
+  log "Writing ${ENV_FILE}"
+  cat > "$ENV_FILE" <<EOF
+DOMAIN=${DOMAIN}
+TZ=${TZ}
+CERT_MODE=${CERT_MODE}
+EOF
+  chmod 600 "$ENV_FILE"
+}
+
 handle_certificates() {
   local cyberchef_fqdn="cyberchef.${DOMAIN}"
 
@@ -93,8 +146,8 @@ handle_certificates() {
       log "Using provided certificate files for ${cyberchef_fqdn}"
 
       local cert_src key_src
-      prompt_path "Path to CyberChef certificate file" cert_src
-      prompt_path "Path to CyberChef private key file" key_src
+      prompt cert_src "Path to CyberChef certificate file"
+      prompt key_src "Path to CyberChef private key file"
 
       copy_file_checked "$cert_src" "${CYBERCHEF_CERT_DIR}/tls.crt"
       copy_file_checked "$key_src" "${CYBERCHEF_CERT_DIR}/tls.key"
@@ -108,14 +161,11 @@ handle_certificates() {
   esac
 }
 
-require_envsubst() {
-  require_cmd envsubst
-}
-
 render_proxy_config() {
   [[ -f "$PROXY_CONF_TEMPLATE" ]] || fail "Template not found: ${PROXY_CONF_TEMPLATE}"
 
   log "Rendering CyberChef reverse proxy config"
+  export DOMAIN
   envsubst '${DOMAIN}' < "$PROXY_CONF_TEMPLATE" > "$PROXY_CONF_RENDERED"
 }
 
@@ -143,9 +193,13 @@ start_services() {
 main() {
   require_cmd docker
   require_cmd openssl
-  require_envsubst
+  require_cmd envsubst
 
-  load_env
+  prompt DOMAIN "Base domain"
+  prompt TZ "Timezone" "Europe/London"
+  prompt_choice CERT_MODE "Certificate mode" "selfsigned" "selfsigned" "provided"
+
+  write_env_file
   ensure_dirs
   create_networks
   handle_certificates
@@ -156,15 +210,16 @@ main() {
 
 [+] Done
 
-CyberChef URL:
-    https://cyberchef.${DOMAIN}:8443
+Generated:
+- ${ENV_FILE}
+- ${CYBERCHEF_CERT_DIR}/tls.crt
+- ${CYBERCHEF_CERT_DIR}/tls.key
+- ${PROXY_CONF_RENDERED}
 
-Notes:
-- This assumes the reverse proxy compose publishes 8443 -> 443.
-- If you changed the host port in shared/reverse-proxy/docker-compose.yml, use that port instead.
-- If CERT_MODE=provided, the certificate and key were copied into:
-    ${CYBERCHEF_CERT_DIR}
+CyberChef should be available at:
+- https://cyberchef.${DOMAIN}:8443
 
+If your reverse proxy compose uses a different host port than 8443, use that instead.
 EOF
 }
 
