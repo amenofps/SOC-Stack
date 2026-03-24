@@ -22,6 +22,11 @@ NAVIGATOR_CONF_RENDERED="${PROXY_DIR}/conf.d/navigator.conf"
 OPENCTI_CONF_TEMPLATE="${PROXY_DIR}/conf.d/opencti.conf.template"
 OPENCTI_CONF_RENDERED="${PROXY_DIR}/conf.d/opencti.conf"
 
+OPENCTI_ES_DATA_DIR="${OPENCTI_DIR}/elasticsearch"
+OPENCTI_REDIS_DATA_DIR="${OPENCTI_DIR}/redis"
+OPENCTI_RABBITMQ_DATA_DIR="${OPENCTI_DIR}/rabbitmq"
+OPENCTI_MINIO_DATA_DIR="${OPENCTI_DIR}/minio"
+
 log() {
   echo "[+] $*"
 }
@@ -132,6 +137,11 @@ ensure_dirs() {
   mkdir -p "$NAVIGATOR_CERT_DIR"
   mkdir -p "$OPENCTI_CERT_DIR"
   mkdir -p "${PROXY_DIR}/conf.d"
+
+  mkdir -p "$OPENCTI_ES_DATA_DIR"
+  mkdir -p "$OPENCTI_REDIS_DATA_DIR"
+  mkdir -p "$OPENCTI_RABBITMQ_DATA_DIR"
+  mkdir -p "$OPENCTI_MINIO_DATA_DIR"
 }
 
 create_networks() {
@@ -226,6 +236,32 @@ render_proxy_configs() {
   envsubst '${DOMAIN}' < "$OPENCTI_CONF_TEMPLATE" > "$OPENCTI_CONF_RENDERED"
 }
 
+prepare_opencti_host() {
+  log "Preparing OpenCTI host directories"
+
+  mkdir -p "$OPENCTI_ES_DATA_DIR" "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR"
+
+  log "Setting Elasticsearch data directory permissions"
+  chown -R 1000:0 "$OPENCTI_ES_DATA_DIR"
+  chmod -R 775 "$OPENCTI_ES_DATA_DIR"
+
+  log "Setting group write permissions on other OpenCTI data directories"
+  chgrp -R 0 "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
+  chmod -R g+rwx "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
+
+  log "Setting vm.max_map_count for Elasticsearch"
+  sysctl -w vm.max_map_count=1048576 >/dev/null
+
+  if [[ -d /etc/sysctl.d ]]; then
+    cat > /etc/sysctl.d/99-elasticsearch.conf <<EOF
+vm.max_map_count=1048576
+EOF
+    sysctl --system >/dev/null || warn "Could not reload all sysctl settings automatically"
+  else
+    warn "/etc/sysctl.d not present; vm.max_map_count was set for the current runtime only"
+  fi
+}
+
 compose_cmd() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
@@ -256,9 +292,12 @@ start_services() {
 }
 
 main() {
+  [[ "$(id -u)" -eq 0 ]] || fail "Run this script as root"
+
   require_cmd docker
   require_cmd openssl
   require_cmd envsubst
+  require_cmd sysctl
 
   prompt DOMAIN "Base domain"
   prompt TZ "Timezone" "Europe/London"
@@ -287,6 +326,7 @@ main() {
   write_env_file
   ensure_dirs
   create_networks
+  prepare_opencti_host
   handle_certificates
   render_proxy_configs
   start_services
@@ -306,6 +346,13 @@ Generated:
 - ${CYBERCHEF_CONF_RENDERED}
 - ${NAVIGATOR_CONF_RENDERED}
 - ${OPENCTI_CONF_RENDERED}
+
+Prepared:
+- ${OPENCTI_ES_DATA_DIR}
+- ${OPENCTI_REDIS_DATA_DIR}
+- ${OPENCTI_RABBITMQ_DATA_DIR}
+- ${OPENCTI_MINIO_DATA_DIR}
+- /etc/sysctl.d/99-elasticsearch.conf
 
 URLs:
 - https://cyberchef.${DOMAIN}:8443
