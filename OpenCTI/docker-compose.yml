@@ -145,11 +145,11 @@ services:
     volumes:
       - opencti-elasticsearch-data:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider --user=elastic --password=${OPENCTI_ELASTIC_PASSWORD} http://localhost:9200 || exit 1"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/127.0.0.1/9200"]
+      interval: 15s
+      timeout: 5s
       retries: 20
-      start_period: 120s
+      start_period: 60s
 
 networks:
   soc_shared:
