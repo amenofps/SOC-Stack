@@ -4,16 +4,16 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ROOT_DIR}/.env"
 
-## Cyberchef
 CYBERCHEF_DIR="${ROOT_DIR}/Cyberchef"
-PROXY_DIR="${ROOT_DIR}/shared/reverse-proxy"
-CYBERCHEF_CERT_DIR="${CYBERCHEF_DIR}/certs"
-PROXY_CONF_TEMPLATE="${PROXY_DIR}/conf.d/cyberchef.conf.template"
-PROXY_CONF_RENDERED="${PROXY_DIR}/conf.d/cyberchef.conf"
-
-## Navigator
 NAVIGATOR_DIR="${ROOT_DIR}/Navigator"
+PROXY_DIR="${ROOT_DIR}/shared/reverse-proxy"
+
+CYBERCHEF_CERT_DIR="${CYBERCHEF_DIR}/certs"
 NAVIGATOR_CERT_DIR="${NAVIGATOR_DIR}/certs"
+
+CYBERCHEF_CONF_TEMPLATE="${PROXY_DIR}/conf.d/cyberchef.conf.template"
+CYBERCHEF_CONF_RENDERED="${PROXY_DIR}/conf.d/cyberchef.conf"
+
 NAVIGATOR_CONF_TEMPLATE="${PROXY_DIR}/conf.d/navigator.conf.template"
 NAVIGATOR_CONF_RENDERED="${PROXY_DIR}/conf.d/navigator.conf"
 
@@ -70,6 +70,31 @@ prompt_choice() {
     done
 
     warn "Invalid choice: $input"
+  done
+}
+
+prompt_yes_no() {
+  local var_name="$1"
+  local prompt_text="$2"
+  local default_value="${3:-y}"
+  local input
+
+  while true; do
+    read -r -p "$prompt_text [y/n] (default: $default_value): " input || true
+    input="${input:-$default_value}"
+    case "${input,,}" in
+      y|yes)
+        printf -v "$var_name" 'yes'
+        return 0
+        ;;
+      n|no)
+        printf -v "$var_name" 'no'
+        return 0
+        ;;
+      *)
+        warn "Please answer y or n."
+        ;;
+    esac
   done
 }
 
@@ -130,8 +155,9 @@ handle_certificates() {
     provided)
       log "Using provided certificate files for ${cyberchef_fqdn}"
       local cert_src key_src
-      prompt cert_src "Path to CyberChef certificate file"
-      prompt key_src "Path to CyberChef private key file"
+
+      prompt cert_src "Path to Cyberchef certificate file"
+      prompt key_src "Path to Cyberchef private key file"
       copy_file_checked "$cert_src" "${CYBERCHEF_CERT_DIR}/tls.crt"
       copy_file_checked "$key_src" "${CYBERCHEF_CERT_DIR}/tls.key"
       chmod 600 "${CYBERCHEF_CERT_DIR}/tls.key"
@@ -151,13 +177,13 @@ handle_certificates() {
   esac
 }
 
-render_proxy_config() {
-  [[ -f "$PROXY_CONF_TEMPLATE" ]] || fail "Template not found: ${PROXY_CONF_TEMPLATE}"
+render_proxy_configs() {
+  [[ -f "$CYBERCHEF_CONF_TEMPLATE" ]] || fail "Template not found: ${CYBERCHEF_CONF_TEMPLATE}"
   [[ -f "$NAVIGATOR_CONF_TEMPLATE" ]] || fail "Template not found: ${NAVIGATOR_CONF_TEMPLATE}"
 
   log "Rendering reverse proxy configs"
   export DOMAIN
-  envsubst '${DOMAIN}' < "$PROXY_CONF_TEMPLATE" > "$PROXY_CONF_RENDERED"
+  envsubst '${DOMAIN}' < "$CYBERCHEF_CONF_TEMPLATE" > "$CYBERCHEF_CONF_RENDERED"
   envsubst '${DOMAIN}' < "$NAVIGATOR_CONF_TEMPLATE" > "$NAVIGATOR_CONF_RENDERED"
 }
 
@@ -199,7 +225,7 @@ main() {
   ensure_dirs
   create_networks
   handle_certificates
-  render_proxy_config
+  render_proxy_configs
   start_services
 
   cat <<EOF
@@ -210,10 +236,14 @@ Generated:
 - ${ENV_FILE}
 - ${CYBERCHEF_CERT_DIR}/tls.crt
 - ${CYBERCHEF_CERT_DIR}/tls.key
-- ${PROXY_CONF_RENDERED}
+- ${NAVIGATOR_CERT_DIR}/tls.crt
+- ${NAVIGATOR_CERT_DIR}/tls.key
+- ${CYBERCHEF_CONF_RENDERED}
+- ${NAVIGATOR_CONF_RENDERED}
 
-Cyberchef should be available at:
+URLs:
 - https://cyberchef.${DOMAIN}:8443
+- https://navigator.${DOMAIN}:8443
 
 If your reverse proxy compose uses a different host port than 8443, use that instead.
 EOF

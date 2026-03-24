@@ -2,15 +2,15 @@ version: "3.9"
 
 services:
   navigator:
-    image: nginx:stable
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: navigator
     restart: unless-stopped
     env_file:
       - ../.env
     environment:
       TZ: ${TZ}
-    volumes:
-      - ./site:/usr/share/nginx/html:ro
     networks:
       - soc_shared
 
