@@ -4,7 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ROOT_DIR}/.env"
 
-CYBERCHEF_DIR="${ROOT_DIR}/CyberChef"
+CYBERCHEF_DIR="${ROOT_DIR}/Cyberchef"
 PROXY_DIR="${ROOT_DIR}/shared/reverse-proxy"
 CYBERCHEF_CERT_DIR="${CYBERCHEF_DIR}/certs"
 PROXY_CONF_TEMPLATE="${PROXY_DIR}/conf.d/cyberchef.conf.template"
