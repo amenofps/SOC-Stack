@@ -132,6 +132,19 @@ random_secret() {
   openssl rand -hex 32
 }
 
+random_uuid() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr '[:upper:]' '[:lower:]'
+  else
+    cat /proc/sys/kernel/random/uuid
+  fi
+}
+
+validate_uuid() {
+  local value="$1"
+  [[ "$value" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
+}
+
 ensure_dirs() {
   mkdir -p "$CYBERCHEF_CERT_DIR"
   mkdir -p "$NAVIGATOR_CERT_DIR"
@@ -311,14 +324,14 @@ main() {
   prompt_secret OPENCTI_ADMIN_PASSWORD "OpenCTI admin password"
 
   prompt_yes_no GENERATE_OPENCTI_SECRETS "Generate OpenCTI tokens and passwords automatically?" "y"
-  if [[ "$GENERATE_OPENCTI_SECRETS" == "yes" ]]; then
-    OPENCTI_ADMIN_TOKEN="$(random_secret)"
-    OPENCTI_HEALTHCHECK_ACCESS_KEY="$(random_secret)"
-    OPENCTI_REDIS_PASSWORD="$(random_secret)"
-    OPENCTI_RABBITMQ_DEFAULT_PASS="$(random_secret)"
-    OPENCTI_MINIO_ROOT_PASSWORD="$(random_secret)"
-    OPENCTI_ELASTIC_PASSWORD="$(random_secret)"
-  else
+if [[ "$GENERATE_OPENCTI_SECRETS" == "yes" ]]; then
+  OPENCTI_ADMIN_TOKEN="$(random_uuid)"
+  OPENCTI_HEALTHCHECK_ACCESS_KEY="$(random_secret)"
+  OPENCTI_REDIS_PASSWORD="$(random_secret)"
+  OPENCTI_RABBITMQ_DEFAULT_PASS="$(random_secret)"
+  OPENCTI_MINIO_ROOT_PASSWORD="$(random_secret)"
+  OPENCTI_ELASTIC_PASSWORD="$(random_secret)"
+else
     prompt_secret OPENCTI_ADMIN_TOKEN "OpenCTI admin token"
     prompt_secret OPENCTI_HEALTHCHECK_ACCESS_KEY "OpenCTI healthcheck access key"
     prompt_secret OPENCTI_REDIS_PASSWORD "OpenCTI Redis password"
