@@ -21,7 +21,7 @@ services:
       - ../../n8n/certs:/certs/n8n:ro
       - ../../shuffle/certs:/certs/shuffle:ro
       - ../../caldera/certs:/certs/caldera:ro
-      - ../../navigator/certs:/certs/navigator:ro
+      - ../../Navigator/certs:/certs/navigator:ro
       - ../../arkime/certs:/certs/arkime:ro
       - ../../velociraptor/certs:/certs/velociraptor:ro
     networks:

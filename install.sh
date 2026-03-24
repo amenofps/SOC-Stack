@@ -4,11 +4,18 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ROOT_DIR}/.env"
 
+## Cyberchef
 CYBERCHEF_DIR="${ROOT_DIR}/Cyberchef"
 PROXY_DIR="${ROOT_DIR}/shared/reverse-proxy"
 CYBERCHEF_CERT_DIR="${CYBERCHEF_DIR}/certs"
 PROXY_CONF_TEMPLATE="${PROXY_DIR}/conf.d/cyberchef.conf.template"
 PROXY_CONF_RENDERED="${PROXY_DIR}/conf.d/cyberchef.conf"
+
+## Navigator
+NAVIGATOR_DIR="${ROOT_DIR}/Navigator"
+NAVIGATOR_CERT_DIR="${NAVIGATOR_DIR}/certs"
+NAVIGATOR_CONF_TEMPLATE="${PROXY_DIR}/conf.d/navigator.conf.template"
+NAVIGATOR_CONF_RENDERED="${PROXY_DIR}/conf.d/navigator.conf"
 
 log() {
   echo "[+] $*"
@@ -68,6 +75,7 @@ prompt_choice() {
 
 ensure_dirs() {
   mkdir -p "$CYBERCHEF_CERT_DIR"
+  mkdir -p "$NAVIGATOR_CERT_DIR"
   mkdir -p "${PROXY_DIR}/conf.d"
 }
 
@@ -112,23 +120,30 @@ EOF
 
 handle_certificates() {
   local cyberchef_fqdn="cyberchef.${DOMAIN}"
+  local navigator_fqdn="navigator.${DOMAIN}"
 
   case "${CERT_MODE}" in
     selfsigned)
       generate_self_signed_cert "$cyberchef_fqdn" "$CYBERCHEF_CERT_DIR"
+      generate_self_signed_cert "$navigator_fqdn" "$NAVIGATOR_CERT_DIR"
       ;;
     provided)
       log "Using provided certificate files for ${cyberchef_fqdn}"
-
       local cert_src key_src
       prompt cert_src "Path to CyberChef certificate file"
       prompt key_src "Path to CyberChef private key file"
-
       copy_file_checked "$cert_src" "${CYBERCHEF_CERT_DIR}/tls.crt"
       copy_file_checked "$key_src" "${CYBERCHEF_CERT_DIR}/tls.key"
-
       chmod 600 "${CYBERCHEF_CERT_DIR}/tls.key"
       chmod 644 "${CYBERCHEF_CERT_DIR}/tls.crt"
+
+      log "Using provided certificate files for ${navigator_fqdn}"
+      prompt cert_src "Path to Navigator certificate file"
+      prompt key_src "Path to Navigator private key file"
+      copy_file_checked "$cert_src" "${NAVIGATOR_CERT_DIR}/tls.crt"
+      copy_file_checked "$key_src" "${NAVIGATOR_CERT_DIR}/tls.key"
+      chmod 600 "${NAVIGATOR_CERT_DIR}/tls.key"
+      chmod 644 "${NAVIGATOR_CERT_DIR}/tls.crt"
       ;;
     *)
       fail "CERT_MODE must be either 'selfsigned' or 'provided'"
@@ -138,10 +153,12 @@ handle_certificates() {
 
 render_proxy_config() {
   [[ -f "$PROXY_CONF_TEMPLATE" ]] || fail "Template not found: ${PROXY_CONF_TEMPLATE}"
+  [[ -f "$NAVIGATOR_CONF_TEMPLATE" ]] || fail "Template not found: ${NAVIGATOR_CONF_TEMPLATE}"
 
-  log "Rendering CyberChef reverse proxy config"
+  log "Rendering reverse proxy configs"
   export DOMAIN
   envsubst '${DOMAIN}' < "$PROXY_CONF_TEMPLATE" > "$PROXY_CONF_RENDERED"
+  envsubst '${DOMAIN}' < "$NAVIGATOR_CONF_TEMPLATE" > "$NAVIGATOR_CONF_RENDERED"
 }
 
 compose_cmd() {
@@ -156,10 +173,14 @@ compose_cmd() {
 
 start_services() {
   [[ -f "${CYBERCHEF_DIR}/docker-compose.yml" ]] || fail "Missing ${CYBERCHEF_DIR}/docker-compose.yml"
+  [[ -f "${NAVIGATOR_DIR}/docker-compose.yml" ]] || fail "Missing ${NAVIGATOR_DIR}/docker-compose.yml"
   [[ -f "${PROXY_DIR}/docker-compose.yml" ]] || fail "Missing ${PROXY_DIR}/docker-compose.yml"
 
   log "Starting Cyberchef"
   compose_cmd --env-file "$ENV_FILE" -f "${CYBERCHEF_DIR}/docker-compose.yml" up -d
+
+  log "Starting Navigator"
+  compose_cmd --env-file "$ENV_FILE" -f "${NAVIGATOR_DIR}/docker-compose.yml" up -d
 
   log "Starting reverse proxy"
   compose_cmd --env-file "$ENV_FILE" -f "${PROXY_DIR}/docker-compose.yml" up -d
