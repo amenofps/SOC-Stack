@@ -8,35 +8,22 @@ services:
     environment:
       NODE_OPTIONS: --max-old-space-size=4096
       APP__PORT: 8080
-      APP__BASE_URL: https://opencti.${DOMAIN}
-
+      APP__BASE_URL: "https://opencti.${DOMAIN}"
       REDIS__HOSTNAME: opencti-redis
       REDIS__PORT: 6379
       REDIS__PASSWORD: ${OPENCTI_REDIS_PASSWORD}
-
       AMQP__HOSTNAME: opencti-rabbitmq
       AMQP__PORT: 5672
       AMQP__USERNAME: opencti
       AMQP__PASSWORD: ${OPENCTI_RABBITMQ_DEFAULT_PASS}
-
       MINIO__ENDPOINT: opencti-minio
       MINIO__PORT: 9000
       MINIO__USE_SSL: "false"
       MINIO__ACCESS_KEY: opencti
       MINIO__SECRET_KEY: ${OPENCTI_MINIO_ROOT_PASSWORD}
-
       ELASTICSEARCH__URL: http://opencti-elasticsearch:9200
       ELASTICSEARCH__USERNAME: elastic
       ELASTICSEARCH__PASSWORD: ${OPENCTI_ELASTIC_PASSWORD}
-
-      SMTP__HOSTNAME: ${OPENCTI_SMTP_HOST:-}
-      SMTP__PORT: ${OPENCTI_SMTP_PORT:-25}
-      SMTP__USERNAME: ${OPENCTI_SMTP_USERNAME:-}
-      SMTP__PASSWORD: ${OPENCTI_SMTP_PASSWORD:-}
-      SMTP__TLS: ${OPENCTI_SMTP_TLS:-false}
-      SMTP__SSL: ${OPENCTI_SMTP_SSL:-false}
-      SMTP__SENDER: ${OPENCTI_SMTP_SENDER:-}
-
       PROVIDERS__LOCAL__STRATEGY: LocalStrategy
       APP__ADMIN__EMAIL: ${OPENCTI_ADMIN_EMAIL}
       APP__ADMIN__PASSWORD: ${OPENCTI_ADMIN_PASSWORD}
@@ -55,7 +42,7 @@ services:
       - soc_shared
       - opencti_internal
 
-  worker:
+  opencti-worker:
     image: opencti/worker:latest
     container_name: opencti-worker
     restart: unless-stopped
@@ -64,22 +51,18 @@ services:
     environment:
       OPENCTI_URL: http://opencti:8080
       OPENCTI_TOKEN: ${OPENCTI_ADMIN_TOKEN}
-
       REDIS__HOSTNAME: opencti-redis
       REDIS__PORT: 6379
       REDIS__PASSWORD: ${OPENCTI_REDIS_PASSWORD}
-
       AMQP__HOSTNAME: opencti-rabbitmq
       AMQP__PORT: 5672
       AMQP__USERNAME: opencti
       AMQP__PASSWORD: ${OPENCTI_RABBITMQ_DEFAULT_PASS}
-
       MINIO__ENDPOINT: opencti-minio
       MINIO__PORT: 9000
       MINIO__USE_SSL: "false"
       MINIO__ACCESS_KEY: opencti
       MINIO__SECRET_KEY: ${OPENCTI_MINIO_ROOT_PASSWORD}
-
       ELASTICSEARCH__URL: http://opencti-elasticsearch:9200
       ELASTICSEARCH__USERNAME: elastic
       ELASTICSEARCH__PASSWORD: ${OPENCTI_ELASTIC_PASSWORD}
@@ -94,8 +77,6 @@ services:
     container_name: opencti-redis
     restart: unless-stopped
     command: ["redis-server", "--requirepass", "${OPENCTI_REDIS_PASSWORD}"]
-    volumes:
-      - ./redis:/data
     networks:
       - opencti_internal
 
@@ -106,8 +87,6 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: opencti
       RABBITMQ_DEFAULT_PASS: ${OPENCTI_RABBITMQ_DEFAULT_PASS}
-    volumes:
-      - ./rabbitmq:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 30s
@@ -124,8 +103,6 @@ services:
     environment:
       MINIO_ROOT_USER: opencti
       MINIO_ROOT_PASSWORD: ${OPENCTI_MINIO_ROOT_PASSWORD}
-    volumes:
-      - ./minio:/data
     networks:
       - opencti_internal
 
@@ -150,12 +127,13 @@ services:
       timeout: 5s
       retries: 20
       start_period: 60s
+    networks:
+      - opencti_internal
 
 networks:
   soc_shared:
     external: true
   opencti_internal:
-    driver: bridge
 
 volumes:
   opencti-elasticsearch-data:
