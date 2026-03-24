@@ -87,11 +87,14 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: opencti
       RABBITMQ_DEFAULT_PASS: ${OPENCTI_RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - opencti-rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      retries: 10
+      retries: 20
+      start_period: 60s
     networks:
       - opencti_internal
 
@@ -137,3 +140,4 @@ networks:
 
 volumes:
   opencti-elasticsearch-data:
+  opencti-rabbitmq-data:
