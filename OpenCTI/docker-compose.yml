@@ -129,7 +129,7 @@ services:
     networks:
       - opencti_internal
 
-    opencti-elasticsearch:
+  opencti-elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     container_name: opencti-elasticsearch
     restart: unless-stopped
