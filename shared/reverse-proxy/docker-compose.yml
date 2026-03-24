@@ -15,7 +15,7 @@ services:
       - ./conf.d:/etc/nginx/conf.d:ro
 
       - ../../opencti/certs:/certs/opencti:ro
-      - ../../cyberchef/certs:/certs/cyberchef:ro
+      - ../../Cyberchef/certs:/certs/cyberchef:ro
       - ../../thehive/certs:/certs/thehive:ro
       - ../../cortex/certs:/certs/cortex:ro
       - ../../n8n/certs:/certs/n8n:ro
