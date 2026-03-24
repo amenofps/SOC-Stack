@@ -9,6 +9,9 @@ WORKDIR /src/nav-app
 RUN npm install
 RUN npm run build -- --configuration production
 
+RUN rm -rf /tmp/navigator-webroot && mkdir -p /tmp/navigator-webroot \
+    && cp -a /src/nav-app/dist/browser/. /tmp/navigator-webroot/
+
 FROM nginx:stable
-RUN rm -f /usr/share/nginx/html/index.html
-COPY --from=build /src/nav-app/dist/browser/* /usr/share/nginx/html/
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=build /tmp/navigator-webroot/ /usr/share/nginx/html/
