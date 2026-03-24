@@ -129,7 +129,7 @@ services:
     networks:
       - opencti_internal
 
-  opencti-elasticsearch:
+    opencti-elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     container_name: opencti-elasticsearch
     restart: unless-stopped
@@ -143,18 +143,14 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - ./elasticsearch:/usr/share/elasticsearch/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s -u elastic:${OPENCTI_ELASTIC_PASSWORD} http://localhost:9200 >/dev/null || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 20
-      start_period: 90s
-    networks:
-      - opencti_internal
+      - opencti-elasticsearch-data:/usr/share/elasticsearch/data
+
 
 networks:
   soc_shared:
     external: true
   opencti_internal:
     driver: bridge
+
+volumes:
+  opencti-elasticsearch-data:
