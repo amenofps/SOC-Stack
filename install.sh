@@ -66,31 +66,6 @@ prompt_choice() {
   done
 }
 
-prompt_yes_no() {
-  local var_name="$1"
-  local prompt_text="$2"
-  local default_value="${3:-y}"
-  local input
-
-  while true; do
-    read -r -p "$prompt_text [y/n] (default: $default_value): " input || true
-    input="${input:-$default_value}"
-    case "${input,,}" in
-      y|yes)
-        printf -v "$var_name" 'yes'
-        return 0
-        ;;
-      n|no)
-        printf -v "$var_name" 'no'
-        return 0
-        ;;
-      *)
-        warn "Please answer y or n."
-        ;;
-    esac
-  done
-}
-
 ensure_dirs() {
   mkdir -p "$CYBERCHEF_CERT_DIR"
   mkdir -p "${PROXY_DIR}/conf.d"
@@ -183,7 +158,7 @@ start_services() {
   [[ -f "${CYBERCHEF_DIR}/docker-compose.yml" ]] || fail "Missing ${CYBERCHEF_DIR}/docker-compose.yml"
   [[ -f "${PROXY_DIR}/docker-compose.yml" ]] || fail "Missing ${PROXY_DIR}/docker-compose.yml"
 
-  log "Starting CyberChef"
+  log "Starting Cyberchef"
   compose_cmd --env-file "$ENV_FILE" -f "${CYBERCHEF_DIR}/docker-compose.yml" up -d
 
   log "Starting reverse proxy"
@@ -216,7 +191,7 @@ Generated:
 - ${CYBERCHEF_CERT_DIR}/tls.key
 - ${PROXY_CONF_RENDERED}
 
-CyberChef should be available at:
+Cyberchef should be available at:
 - https://cyberchef.${DOMAIN}:8443
 
 If your reverse proxy compose uses a different host port than 8443, use that instead.
