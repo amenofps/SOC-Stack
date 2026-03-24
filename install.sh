@@ -241,14 +241,6 @@ prepare_opencti_host() {
 
   mkdir -p "$OPENCTI_ES_DATA_DIR" "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR"
 
-  log "Setting Elasticsearch data directory permissions"
-  chown -R 1000:0 "$OPENCTI_ES_DATA_DIR"
-  chmod -R 775 "$OPENCTI_ES_DATA_DIR"
-
-  log "Setting group write permissions on other OpenCTI data directories"
-  chgrp -R 0 "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
-  chmod -R g+rwx "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
-
   log "Setting vm.max_map_count for Elasticsearch"
   sysctl -w vm.max_map_count=1048576 >/dev/null
 
@@ -260,6 +252,18 @@ EOF
   else
     warn "/etc/sysctl.d not present; vm.max_map_count was set for the current runtime only"
   fi
+
+  log "Setting Elasticsearch bind-mount permissions for uid:gid 1000:0"
+  chown -R 1000:0 "$OPENCTI_ES_DATA_DIR"
+  chmod -R 0775 "$OPENCTI_ES_DATA_DIR"
+  find "$OPENCTI_ES_DATA_DIR" -type d -exec chmod g+s {} \;
+
+  log "Setting permissions on other OpenCTI data directories"
+  chgrp -R 0 "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
+  chmod -R g+rwx "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
+
+  log "Clearing stale Elasticsearch startup state"
+  rm -rf "${OPENCTI_ES_DATA_DIR:?}/"*
 }
 
 compose_cmd() {
