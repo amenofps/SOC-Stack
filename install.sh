@@ -22,9 +22,7 @@ NAVIGATOR_CONF_RENDERED="${PROXY_DIR}/conf.d/navigator.conf"
 OPENCTI_CONF_TEMPLATE="${PROXY_DIR}/conf.d/opencti.conf.template"
 OPENCTI_CONF_RENDERED="${PROXY_DIR}/conf.d/opencti.conf"
 
-OPENCTI_ES_DATA_DIR="${OPENCTI_DIR}/elasticsearch"
 OPENCTI_REDIS_DATA_DIR="${OPENCTI_DIR}/redis"
-OPENCTI_RABBITMQ_DATA_DIR="${OPENCTI_DIR}/rabbitmq"
 OPENCTI_MINIO_DATA_DIR="${OPENCTI_DIR}/minio"
 
 log() {
@@ -132,6 +130,10 @@ random_secret() {
   openssl rand -hex 32
 }
 
+random_base64_32() {
+  openssl rand -base64 32 | tr -d '\n'
+}
+
 random_uuid() {
   if command -v uuidgen >/dev/null 2>&1; then
     uuidgen | tr '[:upper:]' '[:lower:]'
@@ -151,9 +153,7 @@ ensure_dirs() {
   mkdir -p "$OPENCTI_CERT_DIR"
   mkdir -p "${PROXY_DIR}/conf.d"
 
-  mkdir -p "$OPENCTI_ES_DATA_DIR"
   mkdir -p "$OPENCTI_REDIS_DATA_DIR"
-  mkdir -p "$OPENCTI_RABBITMQ_DATA_DIR"
   mkdir -p "$OPENCTI_MINIO_DATA_DIR"
 }
 
@@ -195,6 +195,7 @@ CERT_MODE=${CERT_MODE}
 OPENCTI_ADMIN_EMAIL=${OPENCTI_ADMIN_EMAIL}
 OPENCTI_ADMIN_PASSWORD=${OPENCTI_ADMIN_PASSWORD}
 OPENCTI_ADMIN_TOKEN=${OPENCTI_ADMIN_TOKEN}
+OPENCTI_ENCRYPTION_KEY=${OPENCTI_ENCRYPTION_KEY}
 OPENCTI_HEALTHCHECK_ACCESS_KEY=${OPENCTI_HEALTHCHECK_ACCESS_KEY}
 OPENCTI_REDIS_PASSWORD=${OPENCTI_REDIS_PASSWORD}
 OPENCTI_RABBITMQ_DEFAULT_PASS=${OPENCTI_RABBITMQ_DEFAULT_PASS}
@@ -250,11 +251,12 @@ render_proxy_configs() {
 }
 
 prepare_opencti_host() {
-  log "Preparing OpenCTI host directories"
+  log "Preparing OpenCTI host settings"
 
-  mkdir -p "$OPENCTI_ES_DATA_DIR" "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR"
+  mkdir -p "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR"
 
-  log "Setting vm.max_map_count for Elasticsearch"
+  chmod -R 755 "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
+
   sysctl -w vm.max_map_count=1048576 >/dev/null
 
   if [[ -d /etc/sysctl.d ]]; then
@@ -263,20 +265,8 @@ vm.max_map_count=1048576
 EOF
     sysctl --system >/dev/null || warn "Could not reload all sysctl settings automatically"
   else
-    warn "/etc/sysctl.d not present; vm.max_map_count was set for the current runtime only"
+    warn "/etc/sysctl.d not present; vm.max_map_count was set for current runtime only"
   fi
-
-  log "Setting Elasticsearch bind-mount permissions for uid:gid 1000:0"
-  chown -R 1000:0 "$OPENCTI_ES_DATA_DIR"
-  chmod -R 0775 "$OPENCTI_ES_DATA_DIR"
-  find "$OPENCTI_ES_DATA_DIR" -type d -exec chmod g+s {} \;
-
-  log "Setting permissions on other OpenCTI data directories"
-  chgrp -R 0 "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
-  chmod -R g+rwx "$OPENCTI_REDIS_DATA_DIR" "$OPENCTI_RABBITMQ_DATA_DIR" "$OPENCTI_MINIO_DATA_DIR" || true
-
-  log "Clearing stale Elasticsearch startup state"
-  rm -rf "${OPENCTI_ES_DATA_DIR:?}/"*
 }
 
 compose_cmd() {
@@ -321,24 +311,29 @@ main() {
   prompt_choice CERT_MODE "Certificate mode" "selfsigned" "selfsigned" "provided"
 
   prompt OPENCTI_ADMIN_EMAIL "OpenCTI admin email"
+
   prompt_secret OPENCTI_ADMIN_PASSWORD "OpenCTI admin password"
 
   prompt_yes_no GENERATE_OPENCTI_SECRETS "Generate OpenCTI tokens and passwords automatically?" "y"
-if [[ "$GENERATE_OPENCTI_SECRETS" == "yes" ]]; then
-  OPENCTI_ADMIN_TOKEN="$(random_uuid)"
-  OPENCTI_HEALTHCHECK_ACCESS_KEY="$(random_secret)"
-  OPENCTI_REDIS_PASSWORD="$(random_secret)"
-  OPENCTI_RABBITMQ_DEFAULT_PASS="$(random_secret)"
-  OPENCTI_MINIO_ROOT_PASSWORD="$(random_secret)"
-  OPENCTI_ELASTIC_PASSWORD="$(random_secret)"
-else
-    prompt_secret OPENCTI_ADMIN_TOKEN "OpenCTI admin token"
+  if [[ "$GENERATE_OPENCTI_SECRETS" == "yes" ]]; then
+    OPENCTI_ADMIN_TOKEN="$(random_uuid)"
+    OPENCTI_ENCRYPTION_KEY="$(random_base64_32)"
+    OPENCTI_HEALTHCHECK_ACCESS_KEY="$(random_secret)"
+    OPENCTI_REDIS_PASSWORD="$(random_secret)"
+    OPENCTI_RABBITMQ_DEFAULT_PASS="$(random_secret)"
+    OPENCTI_MINIO_ROOT_PASSWORD="$(random_secret)"
+    OPENCTI_ELASTIC_PASSWORD="$(random_secret)"
+  else
+    prompt OPENCTI_ADMIN_TOKEN "OpenCTI admin token (UUID format)"
+    prompt OPENCTI_ENCRYPTION_KEY "OpenCTI encryption key (base64 from openssl rand -base64 32)"
     prompt_secret OPENCTI_HEALTHCHECK_ACCESS_KEY "OpenCTI healthcheck access key"
     prompt_secret OPENCTI_REDIS_PASSWORD "OpenCTI Redis password"
     prompt_secret OPENCTI_RABBITMQ_DEFAULT_PASS "OpenCTI RabbitMQ password"
     prompt_secret OPENCTI_MINIO_ROOT_PASSWORD "OpenCTI MinIO root password"
     prompt_secret OPENCTI_ELASTIC_PASSWORD "OpenCTI Elasticsearch password"
   fi
+
+  validate_uuid "$OPENCTI_ADMIN_TOKEN" || fail "OPENCTI_ADMIN_TOKEN must be a valid UUID"
 
   write_env_file
   ensure_dirs
@@ -365,9 +360,7 @@ Generated:
 - ${OPENCTI_CONF_RENDERED}
 
 Prepared:
-- ${OPENCTI_ES_DATA_DIR}
 - ${OPENCTI_REDIS_DATA_DIR}
-- ${OPENCTI_RABBITMQ_DATA_DIR}
 - ${OPENCTI_MINIO_DATA_DIR}
 - /etc/sysctl.d/99-elasticsearch.conf
 

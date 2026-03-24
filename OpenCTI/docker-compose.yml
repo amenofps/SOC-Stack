@@ -35,6 +35,7 @@ services:
       APP__ADMIN__PASSWORD: ${OPENCTI_ADMIN_PASSWORD}
       APP__ADMIN__TOKEN: ${OPENCTI_ADMIN_TOKEN}
       APP__HEALTH_ACCESS_KEY: ${OPENCTI_HEALTHCHECK_ACCESS_KEY}
+      APP__ENCRYPTION_KEY: ${OPENCTI_ENCRYPTION_KEY}
     depends_on:
       opencti-redis:
         condition: service_started
