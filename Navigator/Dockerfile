@@ -7,7 +7,8 @@ RUN git clone https://github.com/mitre-attack/attack-navigator.git .
 
 WORKDIR /src/nav-app
 RUN npm install
-RUN npm run build
+RUN npm run build -- --configuration production
 
 FROM nginx:stable
-COPY --from=build /src/nav-app/dist/ /usr/share/nginx/html/
+RUN rm -f /usr/share/nginx/html/index.html
+COPY --from=build /src/nav-app/dist/browser/ /usr/share/nginx/html/
